@@ -1,0 +1,7 @@
+rules:
+  - id: dangerous-eval-usage
+    patterns:
+      - pattern: eval(...)
+    message: "Critical: eval() allows arbitrary code execution and causes DOM XSS."
+    languages: [javascript, typescript]
+    severity: ERROR
