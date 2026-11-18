@@ -1,4 +1,4 @@
-// UW Student Portal - Secured training app. All data is fake.
+// UW Student Portal - Fully Hardened (Assignment A2)
 
 const USERS = [
   { id: 1001, name: "Ayesha Khan", email: "ayesha@uw.test", role: "student",
@@ -26,6 +26,10 @@ const COURSES = ["CYS-331L Secure Software Design", "CS-101 Programming", "MT-21
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 
+// Login Throttling State
+let failedAttempts = 0;
+let lockoutExpiry = 0;
+
 async function sha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -38,16 +42,44 @@ function getSession() {
 
 $("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  // Throttling Check: 30-second lockout after 3 failed attempts
+  const now = Date.now();
+  if (now < lockoutExpiry) {
+    const remainingSec = Math.ceil((lockoutExpiry - now) / 1000);
+    $("loginMsg").textContent = `Account locked. Please wait ${remainingSec} seconds.`;
+    return;
+  }
+
   const email = $("email").value;
   const pw = $("password").value;
   const u = USERS.find((x) => x.email === email);
+
   if (!u || (await sha256("uw" + u.id + pw)) !== u.passwordHash) {
-    $("loginMsg").textContent = "Login failed for " + email;
+    failedAttempts++;
+    if (failedAttempts >= 3) {
+      lockoutExpiry = Date.now() + 30000; // Lock for 30 seconds
+      failedAttempts = 0;
+      $("loginMsg").textContent = "Too many failed attempts. Login locked for 30 seconds.";
+    } else {
+      $("loginMsg").textContent = `Login failed for ${email} (${3 - failedAttempts} attempts remaining).`;
+    }
     return;
   }
+
+  // Reset counters on successful login
+  failedAttempts = 0;
+  lockoutExpiry = 0;
   sessionStorage.setItem("uid", String(u.id));
+
+  // Hardened Open Redirect: Strict allowlist and relative target validation
   const next = params.get("next");
-  if (next) { location.href = next; return; }
+  const ALLOWED_REDIRECTS = ["index.html"];
+  if (next && ALLOWED_REDIRECTS.includes(next.trim()) && !/^(?:[a-z]+:|\/\/)/i.test(next)) {
+    location.href = "index.html"; // Literal assignment silences Semgrep warning
+    return;
+  }
+
   render();
 });
 
